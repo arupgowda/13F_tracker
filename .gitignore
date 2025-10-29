@@ -1,0 +1,10 @@
+*.xml
+.venv
+.~lock*
+__pycache__
+.ipynb_checkpoints
+.DS_Store
+*.swp
+*.log
+.idea
+*.xlsx
