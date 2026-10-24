@@ -26,8 +26,8 @@ xml_url = namedtuple('xml_url', ['reporting_date', 'url'])
 
 # Analyse differences between the two filings
 def analyse(filings):
-    df1 = pd.DataFrame(filings[0])
-    df2 = pd.DataFrame(filings[1])
+    df1 = pd.DataFrame(filings[0]) # latest
+    df2 = pd.DataFrame(filings[1]) # previous
 
     # First convert the numeric columns to appropriate types
     numeric_cols = ['value', 'shares']
@@ -42,16 +42,22 @@ def analyse(filings):
     df1_unique = df1[~df1['name'].isin(common_names)].copy()
     df2_unique = df2[~df2['name'].isin(common_names)].copy()
 
-    # Process unique entries (set to 100% and 0%)
-    df1_unique['shares_pct_change'] = 100.0
-    df2_unique['shares_pct_change'] = -100.0
+    # Process unique entries (set new buys to 100%)
+    df1_unique['shares_change(%)'] = 100.0
+    df1_unique.rename(columns={'shares': 'shares(c)'}, inplace=True)
+    df1_unique['shares(p)'] = 0
+
+    # Process unique entries (set liquidations to -100%)
+    df2_unique['shares_change(%)'] = -100.0
+    df2_unique.rename(columns={'shares': 'shares(p)'}, inplace=True)
+    df2_unique['shares(c)'] = 0
 
     # Filter both dataframes to only include common entries
     df1_common = df1[df1['name'].isin(common_names)]
     df2_common = df2[df2['name'].isin(common_names)]
 
     # Merge the dataframes to align the shares values
-    common = pd.merge(
+    common_df = pd.merge(
         df1_common,
         df2_common,
         on='name',
@@ -59,34 +65,39 @@ def analyse(filings):
     )
 
     # Calculate percentage change in shares
-    common['shares_pct_change'] = (
-        (common['shares_df1'] - common['shares_df2'])
-        / common['shares_df2']) * 100
-    common['shares_pct_change'] = common['shares_pct_change'].round(2)
+    common_df['shares_change(%)'] = (
+        (common_df['shares_df1'] - common_df['shares_df2'])
+        / common_df['shares_df2']) * 100
+    common_df['shares_change(%)'] = common_df['shares_change(%)'].round(2)
 
     # Select only the columns we want from DF1
-    common = common[[
+    common_df = common_df[[
         'name',
         'class_df1',
         'value_df1',
+        'shares_df2',
         'shares_df1',
         'type_df1',
-        'shares_pct_change'
+        'shares_change(%)'
     ]]
 
     # Rename columns to remove the '_df1' suffix
-    common.columns = [
+    common_df.columns = [
         'name',
         'class',
         'value',
-        'shares',
+        'shares(p)',
+        'shares(c)',
         'type',
-        'shares_pct_change'
+        'shares_change(%)'
     ]
 
-    resultList = [common, df1_unique, df2_unique]
+    resultList = [common_df, df1_unique, df2_unique]
     result = pd.concat(resultList)
-    result = result.sort_values('shares_pct_change', ascending=False)
+    result = result.sort_values('shares_change(%)', ascending=False)
+    result['%_of_portfolio'] = ((result['value'] / result['value'].sum()) * 100).round(2)
+
+    # print to CSV
     result.to_csv(
         f"{fund_name}.csv",
         encoding='utf-8',
